@@ -1,5 +1,5 @@
 from .fetch import future_daily, future_minute
-from .plot import plot_trades, plot_equity_curve, plot_hold_values, plot_all
+from .plot import plot_trades, plot_equity_curve, plot_hold_values, plot_all_new
 from .statistic import stats
 from .portfolio import *
 import datetime
@@ -114,8 +114,7 @@ class Strategy(object):
         self._context = Context()
         #   初始化变量
         init(self._context, **kwargs)
-        #   订阅标的
-        self._secs = self._context.securities
+
         #   装载策略回测数据
         self._data = self._fetching_data_from_csv(self._context.minute)
         #   初始化账户基本信息
@@ -123,18 +122,19 @@ class Strategy(object):
 
     # 从本地读取订阅标的数据（csv文件）
     def _fetching_data_from_csv(self, freq=None):
+        delay = 150 if freq is None else 30
         if freq is None:
-            pdata = pd.Panel(dict((stk, future_daily(stk)) for stk in self._secs))
+            pdata = pd.Panel(dict((stk, future_daily(stk)) for stk in self._context.securities))
         else:
-            pdata = pd.Panel(dict((stk, future_minute(stk, freq)) for stk in self._secs))
+            pdata = pd.Panel(dict((stk, future_minute(stk, freq)) for stk in self._context.securities))
 
         # select trade period
         if self._context.pad:
-            pdata = pdata.ix[:, self._context.start - datetime.timedelta(100):self._context.end, :]
+            pdata = pdata.ix[:, self._context.start - datetime.timedelta(delay):self._context.end, :]
         else:
             pdata = pdata.ix[:, self._context.start:self._context.end, :]
-        self._context.end = pdata.major_axis[-1]
-        self._context.start = pdata.ix[:, self._context.start:, :].major_axis[0]
+        self._context.end = pdata.major_axis[-1].date()
+        self._context.start = pdata.ix[:, self._context.start:, :].major_axis[0].date()
         return pdata
 
     #   执行回测
@@ -143,19 +143,14 @@ class Strategy(object):
         # 记录策略耗时
         import time
         t0 = time.time()
-        start_flag = False
 
         # 回测时间戳
         ts_idx = self._data.major_axis  # panel index
 
         # 按行情序列回测
         for t in ts_idx:
-            if not start_flag:
-                if t < self._context.start:
-                    continue
-                else:
-                    # 初始化策略账户各标的持仓数据表
-                    start_flag = True
+            if t < self._context.start:
+                continue
 
             self._account.now = t
             # 取该时刻及之前数据
@@ -163,12 +158,17 @@ class Strategy(object):
 
             # 执行交易逻辑
             algo(df_, self._account, self._context, **kwargs)
-            # 更新每日净值
-            self._account._update_account(t)
-            # 爆仓了
-            if self._account._latest_hold_value() < 0:
-                print('you are blasting warehouse', t)
-                break
+
+            # 每日交易结束后更新净值(日频每日更新，高频每日15点后更新)
+            if self._context.minute is None or t.hour == 15:
+                # 转换成日频数据的 Timestamp('20XX-XX-XX 00:00:00')
+                if self._context.minute is not None:
+                    t = t.replace(hour=0, minute=0, second=0)
+                self._account._update_account(t)
+                # 爆仓了
+                if self._account._latest_hold_value(t) < 0:
+                    print('you are blasting warehouse', t)
+                    break
 
         t1 = time.time()
         print('the strategy backtesing consuming %f seconds' % (t1 - t0))
@@ -205,7 +205,8 @@ class Strategy(object):
 
     def plot(self):
         daily_bal = self._account.daily_bal()
-        plot_all(daily_bal)
+        tlog = self._account.trade_log()
+        plot_all_new(daily_bal, tlog)
 
 
 # 账户类（包含回测结果、下单函数、持仓记录，交易记录）
@@ -229,7 +230,7 @@ class Account(object):
     #   下单能否成交,检查交易方向、金额是否足够，卖出标的量是否足够
     def _valid_order(self, security, price, shares, long_short):
         # 有没平仓的交易时，不能做反向开仓交易
-        vol = self.curr_volume(security)
+        vol = self.curr_hold(security)
         direction = self.curr_direction(security)
 
         # 有没平仓的交易时，不能做反向开仓交易
@@ -246,11 +247,10 @@ class Account(object):
             return 3
 
     # 检查最新持仓市值,不可调用
-    def _latest_hold_value(self):
+    def _latest_hold_value(self, date):
         v_ts = self._hold_value_series()
         v_ts = v_ts.sum(1)
-        value = v_ts.at[self.now]
-        return value
+        return v_ts.at[date]
 
     # 实际成交价
     def _real_price(self, price, direction):
@@ -276,7 +276,7 @@ class Account(object):
         equity_curve.columns = ['remaining_cash', 'hold_value', 'portfolio']
         return equity_curve
 
-    # 返回每笔交易盈亏
+    #   返回每笔交易盈亏
     def per_trade_pl(self):
         _df = pd.DataFrame(self._trade_pl)
         _df = _df.set_index('close_date')
@@ -286,17 +286,17 @@ class Account(object):
     def trade_log(self):
         return self._dbal.get_log()
 
-    #   返回持仓明细
+    #   返回持仓市值明细
     def daily_bal(self):
         return self._dbal.get_daily_balance()
 
     #   可在algo策略中调用，查找标的的最新持仓量
-    def curr_volume(self, sec):
-        return self._dbal.previous_sec_value(self.now, sec, 'hold_volume')
+    def curr_hold(self, sec):
+        return self._dbal.check_sec_value(sec, 'open_qty')
 
     #   可在algo策略中调用，查找标的的最新开平方向
     def curr_direction(self, sec):
-        return self._dbal.previous_sec_value(self.now, sec, 'long_short')
+        return self._dbal.check_sec_value(sec, 'long_short')
 
     #   可在algo策略中调用，查找策略的最新净值序列
     def curr_portfolio_ts(self):
@@ -308,7 +308,7 @@ class Account(object):
     #   可在algo策略中调用，查找策略的最新净值序列
     def curr_holdvalue_ts(self, sec):
         v_ts = self._hold_value_series()
-        holdval = v_ts.ix[:self.now, sec]
+        holdval = v_ts.ix[:self.now.date(), sec]
         return holdval[:-1]
 
     # #   可在algo策略中调用，查找当前策略的最大回撤
@@ -376,8 +376,6 @@ class Account(object):
             self._cash -= price * shares
             #   open order update daily balance
             self._dbal.open_update(self.now, security, price, shares, long_short)
-
-
         elif shares < 0:
             #   update unclosed order and calculate the 'return cash' and 'close profit loss'
             re_cash, trade_pl = self._dbal.close_update(self.now, security, price, shares, long_short)
@@ -411,6 +409,6 @@ class Account(object):
             shares = int(self._cash * (1 - self._commission * 0.01) * percent / price)
             self.order_shares(security, price, shares, long_short, order_check=True, real_price=True)
         elif percent < 0:
-            vol = self._dbal.previous_sec_value(self.now, security, 'hold_volume')
+            vol = self._dbal.check_sec_value(security, 'open_qty')
             shares = int(vol * percent)
             self.order_shares(security, price, shares, long_short, order_check=True, real_price=True)

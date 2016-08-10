@@ -36,10 +36,10 @@ def swap_date(code):
 
 
 #   生成考虑了换月情况的主力连续回测数据
-def generate_swap_zl(code, minute):
+def generate_swap_zl(code, minute=None):
     res = swap_date(code)
     import os
-    local = 'D:/Data/Futures/Minute/%d' % minute + '/'
+    local = 'D:/Data/Futures/Minute/%d' % minute + '/' if minute is not None else 'D:/Data/Futures/Daily/'
     files = os.listdir(local)
     files = list(filter(lambda x: x.startswith(code), files))
     result = []
@@ -47,8 +47,11 @@ def generate_swap_zl(code, minute):
         if f[:-4] in res:
             df = pd.read_csv(local + f, index_col=0, parse_dates=True)
             beg, end = res[f[:-4]]
+            beg = beg.strftime('%Y-%m-%d')
+            end = end.strftime('%Y-%m-%d')
             df = df.ix[beg:end]
-            df = df.between_time('9:00', '15:50')
+            if minute is not None:
+                df = df.between_time('9:00', '15:50')
             result.append(df)
     data = pd.concat(result)
     return data
