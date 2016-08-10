@@ -1,9 +1,12 @@
-from .fetch import future_daily
+from .fetch import future_daily, future_minute
 from .plot import plot_trades, plot_equity_curve, plot_hold_values, plot_all
 from .statistic import stats
 from .portfolio import *
 import datetime
 import pandas as pd
+
+# format price data
+pd.options.display.float_format = '{:0.3f}'.format
 
 
 #   策略配置环境
@@ -13,7 +16,7 @@ class Context(object):
         self._slippage = 0.246  # 交易滑点
         self._commission = 0.03  # 手续费
         self._start = datetime.datetime(2012, 1, 1)  # 策略起始回测期
-        self._minnute = 5
+        self._minute = None
         self._end = None  # 策略结束回测期
         self._pad = True  # 回测数据前沿(方便技术指标类策略回测)
         self._securities = []  # 订阅标的
@@ -27,6 +30,16 @@ class Context(object):
         if not isinstance(value, (int, float)):
             raise TypeError('score must be an number')
         self._cash = value
+
+    @property
+    def minute(self):
+        return self._minute
+
+    @minute.setter
+    def minute(self, value):
+        if value not in [1, 5, 15, 30, 60]:
+            raise TypeError('minute must in [1, 5, 15, 30, 60]')
+        self._minute = value
 
     @property
     def slippage(self):
@@ -104,18 +117,20 @@ class Strategy(object):
         #   订阅标的
         self._secs = self._context.securities
         #   装载策略回测数据
-        self._data = self._fetching_data_from_csv
+        self._data = self._fetching_data_from_csv(self._context.minute)
         #   初始化账户基本信息
         self._account = Account(self._data, self._context)
 
     # 从本地读取订阅标的数据（csv文件）
-    @property
-    def _fetching_data_from_csv(self):
-        pdata = pd.Panel(dict((stk, future_daily(stk)) for stk in self._secs))
+    def _fetching_data_from_csv(self, freq=None):
+        if freq is None:
+            pdata = pd.Panel(dict((stk, future_daily(stk)) for stk in self._secs))
+        else:
+            pdata = pd.Panel(dict((stk, future_minute(stk, freq)) for stk in self._secs))
 
         # select trade period
         if self._context.pad:
-            pdata = pdata.ix[:, self._context.start - datetime.timedelta(150):self._context.end, :]
+            pdata = pdata.ix[:, self._context.start - datetime.timedelta(100):self._context.end, :]
         else:
             pdata = pdata.ix[:, self._context.start:self._context.end, :]
         self._context.end = pdata.major_axis[-1]
@@ -159,7 +174,8 @@ class Strategy(object):
         print('the strategy backtesing consuming %f seconds' % (t1 - t0))
 
     def get_trading_data(self):
-        return self._data
+        daily_bal = self._account.daily_bal()
+        return self._data, daily_bal
 
     def backtest_result(self):
         equity_curve = self._account.account_result()
@@ -202,7 +218,7 @@ class Account(object):
         self._cash_ts = dict()  # 每日现金余额序列
         self._trade_pl = []  # 每笔平仓盈亏序列
         _da = data.ix[:, context.start:, :]
-        self._dbal = DailyBal(_da)
+        self._dbal = DailyBal(_da, context.minute)
 
     #   返回所有标的的总持仓市值序列
     def _hold_value_series(self):

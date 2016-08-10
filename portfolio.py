@@ -1,6 +1,6 @@
 import pandas as pd
 
-_FUTURE_COLUMNS = ['date', 'settle_price', 'hold_volume', 'state', 'long_short', 'cost', 'hold_value']
+_FUTURE_COLUMNS = ['date', 'price', 'hold_volume', 'state', 'long_short', 'cost', 'hold_value']
 
 _UNCLOSED_ORDER_COLUMNS = ['price', 'open_qty', 'long_short']
 _TRADE_LOG_COLUMNS = ['trade_date', 'security', 'price', 'qty', 'direction', 'long_short']
@@ -16,15 +16,15 @@ class TradeState:
 class DailyBal(object):
     """ Log for daily balance """
 
-    def __init__(self, data):
+    def __init__(self, data, freq):
         # pandas.panel of daily balance of every security
         self._tlog = pd.DataFrame(columns=_TRADE_LOG_COLUMNS)
         self._start = data.major_axis[0]
-        self._pdata = self._init_daily_bal(data)
+        self._pdata = self._init_daily_bal(data, freq)
         self._unclosed = self._init_unclosed_order(data.items)
 
     @staticmethod
-    def _init_daily_bal(data):
+    def _init_daily_bal(data, freq):
         _dd = dict()
         for sec in data.items:
             _df = pd.DataFrame(columns=_FUTURE_COLUMNS)
@@ -33,7 +33,9 @@ class DailyBal(object):
             _df['state'] = TradeState.HOLD
             _df['cost'] = 0
             _df['hold_value'] = 0
-            _df['settle_price'] = data[sec].settle.fillna(method='ffill').values
+            df = data[sec]
+            _df['price'] = df.settle.fillna(method='ffill').values if freq is None else df.close.fillna(
+                method='ffill').values
             _df['long_short'] = None
             _df = _df.set_index('date')
             _dd[sec] = _df
@@ -156,7 +158,7 @@ class DailyBal(object):
                 if df.at[date, 'hold_volume'] != 0:
                     df.at[date, 'cost'] = df.loc[:date, 'cost'].iat[-2]
                     df.at[date, 'long_short'] = df.loc[:date, 'long_short'].iat[-2]
-            cal_value = df['settle_price'] * df['hold_volume']
+            cal_value = df['price'] * df['hold_volume']
             short_value = 2 * df['cost'] - cal_value
             df.loc[df.long_short == 'long', 'hold_value'] = cal_value[df.long_short == 'long']
             df.loc[df.long_short == 'short', 'hold_value'] = short_value[df.long_short == 'short']

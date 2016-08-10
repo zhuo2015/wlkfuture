@@ -6,7 +6,55 @@ _MON = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12']
 _YEAR = ['12', '13', '14', '15', '16', '17']
 
 
-#   产生万得期货合约代码 注意郑商所升位问题
+#   查找每个合约的主力合约日期
+def swap_date(code):
+    '''
+
+    Parameters
+    ----------
+    code: au,rb,ag  future code
+
+    Returns
+    -------
+    res: dict
+    '''
+    df = pd.read_excel('D:/Data/Futures/%s' % code + '_main.xlsx')
+    df.columns = ['date', 'name', 'code', 'mom']
+    df.date = df.date.apply(lambda x: str(x))
+    df = df.ix[1:]
+    df.index = range(len(df))
+    from datetime import datetime, timedelta
+    from dateutil.parser import parse
+    now = datetime.today().date()
+    res = {}
+    for i, v in enumerate(df.code):
+        if i != len(df) - 1:
+            res[v] = [parse(df.date[i]).date() + timedelta(1), parse(df.date[i + 1]).date()]
+        else:
+            res[v] = [parse(df.date[i]).date() + timedelta(1), now]
+    return res
+
+
+#   生成考虑了换月情况的主力连续回测数据
+def generate_swap_zl(code, minute):
+    res = swap_date(code)
+    import os
+    local = 'D:/Data/Futures/Minute/%d' % minute + '/'
+    files = os.listdir(local)
+    files = list(filter(lambda x: x.startswith(code), files))
+    result = []
+    for f in files:
+        if f[:-4] in res:
+            df = pd.read_csv(local + f, index_col=0, parse_dates=True)
+            beg, end = res[f[:-4]]
+            df = df.ix[beg:end]
+            df = df.between_time('9:00', '15:50')
+            result.append(df)
+    data = pd.concat(result)
+    return data
+
+
+# 产生万得期货合约代码 注意郑商所升位问题
 def generate_code():
     contract_time = [x + y for x in _YEAR for y in _MON]
     contracts = [x + y for x in _SECS for y in contract_time]
@@ -79,7 +127,7 @@ def main_contract(code):
 
 
 #   查看合约换月日期
-def swap_date(code):
+def swap_date_wind(code):
     ls = main_contract(code)
     res = {}
     for i, x in enumerate(ls):
@@ -90,7 +138,7 @@ def swap_date(code):
 
 #   查看需下载的主力合约起始结束日期
 def main_start_end_download(code):
-    res = swap_date(code)
+    res = swap_date_wind(code)
     from datetime import timedelta, datetime
     result = []
     for i, v in enumerate(res):
