@@ -67,7 +67,7 @@ class Context(object):
 
     @start.setter
     def start(self, start):
-        if isinstance(start, datetime.datetime):
+        if isinstance(start, (datetime.datetime, datetime.date)):
             self._start = start
         elif isinstance(start, str):
             from dateutil.parser import parse
@@ -80,7 +80,7 @@ class Context(object):
 
     @end.setter
     def end(self, end):
-        if isinstance(end, datetime.datetime):
+        if isinstance(end, (datetime.datetime, datetime.date)):
             self._end = end
         elif isinstance(end, str):
             from dateutil.parser import parse
@@ -133,8 +133,8 @@ class Strategy(object):
             pdata = pdata.ix[:, self._context.start - datetime.timedelta(delay):self._context.end, :]
         else:
             pdata = pdata.ix[:, self._context.start:self._context.end, :]
-        self._context.end = pdata.major_axis[-1].date()
-        self._context.start = pdata.ix[:, self._context.start:, :].major_axis[0].date()
+        self._context.end = pdata.major_axis[-1].replace(hour=0, minute=0, second=0)
+        self._context.start = pdata.ix[:, self._context.start:, :].major_axis[0].replace(hour=0, minute=0, second=0)
         return pdata
 
     #   执行回测
@@ -177,6 +177,9 @@ class Strategy(object):
         daily_bal = self._account.daily_bal()
         return self._data, daily_bal
 
+    def get_context(self):
+        return self._context
+
     def backtest_result(self):
         equity_curve = self._account.account_result()
         daily_bal = self._account.daily_bal()
@@ -197,7 +200,7 @@ class Strategy(object):
 
     def equity_curve(self):
         equity_curve = self._account.account_result()
-        plot_equity_curve(equity_curve.portfolio)  # 交易账户类
+        plot_equity_curve(equity_curve['portfolio'])  # 交易账户类
 
     def hold_values(self):
         daily_bal = self._account.daily_bal()
@@ -231,14 +234,14 @@ class Account(object):
     def _valid_order(self, security, price, shares, long_short):
         # 有没平仓的交易时，不能做反向开仓交易
         vol = self.curr_hold(security)
-        direction = self.curr_direction(security)
 
         # 有没平仓的交易时，不能做反向开仓交易
-        if vol != 0 and direction != long_short:
-            return 1
+        if vol != 0:
+            if self.curr_direction(security) != long_short:
+                return 1
+
         money = abs(price * shares)
         commission = self._commission * 0.01 * money
-
         # 多开或者空开
         if shares > 0 and (self._cash < money + commission):
             return 2
@@ -269,8 +272,7 @@ class Account(object):
     #   回测结束后调用
     def account_result(self):
         cash_ts = pd.Series(self._cash_ts)
-        v_ts = self._hold_value_series()
-        hold_value_ts = v_ts.sum(1)
+        hold_value_ts = self._hold_value_series().sum(1)
         portfolio_ts = hold_value_ts + cash_ts
         equity_curve = pd.concat([cash_ts, hold_value_ts, portfolio_ts], axis=1)
         equity_curve.columns = ['remaining_cash', 'hold_value', 'portfolio']
@@ -299,16 +301,16 @@ class Account(object):
         return self._dbal.check_sec_value(sec, 'long_short')
 
     #   可在algo策略中调用，查找策略的最新净值序列
-    def curr_portfolio_ts(self):
+    def curr_portfolio(self):
         v_ts = self._hold_value_series().sum(1)
         c_ts = pd.Series(self._cash_ts)
         p_ts = pd.concat([v_ts, c_ts], axis=1).dropna()
         return p_ts.sum(1)
 
-    #   可在algo策略中调用，查找策略的最新净值序列
-    def curr_holdvalue_ts(self, sec):
+    #   可在algo策略中调用，查找指定标的前一交易日的持仓市值
+    def curr_hold_value(self, sec):
         v_ts = self._hold_value_series()
-        holdval = v_ts.ix[:self.now.date(), sec]
+        holdval = v_ts.ix[:self.now, sec]
         return holdval[:-1]
 
     # #   可在algo策略中调用，查找当前策略的最大回撤
@@ -317,14 +319,14 @@ class Account(object):
 
     #   可在algo策略中调用，查找最近n个交易期标的持仓价值的最大回撤
     def latest_n_drawdown(self, sec, n):
-        pl = self.curr_holdvalue_ts(sec)
+        pl = self.curr_hold_value(sec)
         pl = pl[-n:]
         if (pl != 0).all():
             return max(1 - pl / pd.expanding_max(pl))
 
     # #   可在algo策略中调用，查找最近n个交易期的涨跌幅
     # def latest_n_return(self, n):
-    #     pl = self.curr_portfolio_ts()
+    #     pl = self.curr_portfolio()
     #     pl = pl[-n:]
     #     return pl[-1] / pl[0] - 1
 

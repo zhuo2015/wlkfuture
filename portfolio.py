@@ -118,7 +118,10 @@ class DailyBal(object):
     # 查询指定标的，指定内容（item:交易成本、多空状态、持仓量）,指定日期前一期的值
     def check_sec_value(self, sec, item):
         df = self._unclosed[sec]
-        return df[item].sum()
+        if item == 'open_qty':
+            return df[item].sum()
+        elif item == 'long_short':
+            return df[item].values[-1]
 
     # 开单更新：原始持仓量、成本加上新的开仓量及开仓成本
     def open_update(self, date, sec, price, shares, long_short):
