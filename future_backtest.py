@@ -6,7 +6,7 @@ import datetime
 import pandas as pd
 
 # format price data
-pd.options.display.float_format = '{:0.3f}'.format
+pd.options.display.float_format = '{:0.4f}'.format
 
 
 #   策略配置环境
@@ -122,7 +122,7 @@ class Strategy(object):
 
     # 从本地读取订阅标的数据（csv文件）
     def _fetching_data_from_csv(self, freq=None):
-        delay = 150 if freq is None else 30
+        delay = 150 if freq is None else 70
         if freq is None:
             pdata = pd.Panel(dict((stk, future_daily(stk)) for stk in self._context.securities))
         else:
@@ -141,8 +141,8 @@ class Strategy(object):
     def run_backtest(self, algo, **kwargs):
 
         # 记录策略耗时
-        import time
-        t0 = time.time()
+        # import time
+        # t0 = time.time()
 
         # 回测时间戳
         ts_idx = self._data.major_axis  # panel index
@@ -170,8 +170,8 @@ class Strategy(object):
                     print('you are blasting warehouse', t)
                     break
 
-        t1 = time.time()
-        print('the strategy backtesing consuming %f seconds' % (t1 - t0))
+                    # t1 = time.time()
+                    # print('the strategy backtesing consuming %f seconds' % (t1 - t0))
 
     def get_trading_data(self):
         daily_bal = self._account.daily_bal()
