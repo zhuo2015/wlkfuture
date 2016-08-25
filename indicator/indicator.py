@@ -6,9 +6,7 @@ import talib.abstract as taab
 
 
 #   noly for 1、5 minute high frequency data
-def break_exit(data, **kwargs):
-    inperiod = kwargs['inperiod']
-    outperiod = kwargs['outperiod']
+def TURTLE(data, inperiod=550, outperiod=250):
     da = data.copy()
     da['next_open'] = da['open'].shift(-1)
     da['long_break'] = pd.rolling_max(da.high, inperiod).shift(1)
@@ -24,12 +22,8 @@ def break_exit(data, **kwargs):
     da['ex_price'] = 0
     da.ix[(da.long_signal == 1) | (da.short_signal == -1), 'ex_price'] = da[['sell1', 'next_open']].max(1)
     da.ix[(da.long_signal == -1) | (da.short_signal == 1), 'ex_price'] = da[['buy1', 'next_open']].min(1)
-    return da[['open', 'high', 'low', 'close', 'volume', 'long_signal', 'short_signal', 'ex_price']]
-
-
-def TURTLE(data, open_in=50, close_out=20):
-    df = pd.DataFrame()
-    df['close'] = data['close']
+    # return da[['open', 'high', 'low', 'close', 'volume', 'long_signal', 'short_signal', 'ex_price', 'sell1', 'buy1']]
+    return da[['open', 'close', 'long_signal', 'short_signal', 'ex_price']]
 
 
 def SHADOW(data, upperbound=2, lowerbound=0.01):
