@@ -60,8 +60,9 @@ _S9 = b'\xbd\xe1\xcb\xe3\xbc\xdb'
 _S10 = b'\xc2\xf2\xd2\xbb\xbc\xdb'
 _S11 = b'\xc2\xf4\xd2\xbb\xbc\xdb'
 # 数据字段
-NAME_1 = {_S1: 'amt', _S2: 'volume', _S3: 'position', _S4: 'open', _S5: 'date', _S6: 'close', _S7: 'low', _S8: 'high',
+FU_NAME_1 = {_S1: 'amt', _S2: 'volume', _S3: 'position', _S4: 'open', _S5: 'date', _S6: 'close', _S7: 'low', _S8: 'high',
           _S9: 'settle', _S10: 'buy1', _S11: 'sell1'}
 
 # 主力合约换月数据字段
-NAME_2 = {b'\xb5\xf7\xd5\xfb\xc8\xd5\xc6\xda': 'date', b'\xd6\xf7\xc1\xa6\xb4\xfa\xc2\xeb': 'code'}
+FU_NAME_2 = {b'\xb5\xf7\xd5\xfb\xc8\xd5\xc6\xda': 'date', b'\xd6\xf7\xc1\xa6\xb4\xfa\xc2\xeb': 'code',
+          b'\xd6\xf7\xc1\xa6\xd4\xc2\xb7\xdd': 'month'}

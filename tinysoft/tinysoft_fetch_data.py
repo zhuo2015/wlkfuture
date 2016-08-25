@@ -3,21 +3,53 @@ from .variables import *
 
 
 # get future minute data from tinysoft
-def future_minute_from_tinysoft(code, freq):
+def future_minute_from_tinysoft(code, beg=None, end=None, freq=5):
     import pandas as pd
-    begt = ty.EncodeDate(2010, 1, 1)
-    year = int(END_DAY[:4])
-    mon = int(END_DAY[5:7])
-    day = int(END_DAY[8:10])
-    endt = ty.EncodeDate(year, mon, day)
+    begt, endt = _tydate(beg, end)
     if freq in [1, 5, 15, 30, 60]:
         cy = '%d分钟线' % freq
     else:
         raise ValueError('freq must be 1,5,15,30,60')
     res = ty.RemoteCallFunc("getDetail", [code, begt, endt, cy], {})[1]
     df = pd.DataFrame(res)
-    df = df.rename(columns=NAME_1)
+    df = df.rename(columns=FU_NAME_1)
     df = df.reindex(columns=MINUTE_COL_2)
+    df.date = df.date.apply(lambda x: x.decode('utf-8'))
+    df.set_index('date', inplace=True)
+    df.index = pd.DatetimeIndex(df.index)
+    return df
+
+
+def _tydate(beg=None, end=None):
+    from dateutil import parser
+    beg = parser.parse(beg)
+    end = parser.parse(end)
+    if beg:
+        begt = ty.EncodeDate(beg.year, beg.month, beg.day)
+    else:
+        begt = ty.EncodeDate(2016, 1, 1)
+    if end:
+        endt = ty.EncodeDate(end.year, end.month, end.day)
+    else:
+        year = int(END_DAY[:4])
+        mon = int(END_DAY[5:7])
+        day = int(END_DAY[8:10])
+        endt = ty.EncodeDate(year, mon, day)
+    return begt, endt
+
+
+# get future minute data from tinysoft
+def stock_from_tinysoft(code, beg=None, end=None, freq='日线'):
+    import pandas as pd
+    begt, endt = _tydate(beg, end)
+    if freq in [1, 2, 3, 5, 10, 15, 20, 30, 40, 60, 120]:
+        cy = '%d分钟线' % freq
+    else:
+        cy = freq
+    res = ty.RemoteCallFunc("stockData", [code, begt, endt, cy], {})[1]
+    df = pd.DataFrame(res)
+    df.columns = df.columns.map(lambda x: x.decode('utf-8'))
+    df = df.reindex(columns=['date', 'open', 'high', 'low', 'close', 'volume', 'amount'])
     df.date = df.date.apply(lambda x: x.decode('utf-8'))
     df.set_index('date', inplace=True)
     df.index = pd.DatetimeIndex(df.index)
@@ -34,7 +66,7 @@ def future_daily_from_tinysoft(code):
     endt = ty.EncodeDate(year, mon, day)
     res = ty.RemoteCallFunc("dailyData", [code, begt, endt], {})[1]
     df = pd.DataFrame(res)
-    df = df.rename(columns=NAME_1)
+    df = df.rename(columns=FU_NAME_1)
     df = df.reindex(columns=DAILY_COL)
     df.date = df.date.apply(lambda x: x.decode('utf-8'))
     df.set_index('date', inplace=True)
@@ -49,9 +81,10 @@ def future_swap_from_tinysoft(code):
     df = pd.DataFrame(res)
     df = df.ix[:, -1].ix[0]
     df = pd.DataFrame(df)
-    df = df.rename(columns=NAME_2)
-    df = df.ix[1:, [0, 2]]
+    df = df.rename(columns=FU_NAME_2)
+    df = df.ix[1:, [0, 2, 3]]
     df['code'] = df['code'].apply(lambda x: x.decode('utf-8'))
+    df['month'] = df['month'].apply(lambda x: x.decode('utf-8'))
     df = df.set_index('date')
     return df
 
