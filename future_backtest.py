@@ -20,6 +20,7 @@ class Context(object):
         self._end = None  # 策略结束回测期
         self._pad = True  # 回测数据前沿(方便技术指标类策略回测)
         self._securities = []  # 订阅标的
+        self._diydata = False
 
     @property
     def cash(self):
@@ -98,6 +99,16 @@ class Context(object):
         self._pad = pad
 
     @property
+    def diydata(self):
+        return self._diydata
+
+    @diydata.setter
+    def diydata(self, diydata):
+        if not isinstance(diydata, bool):
+            raise TypeError('pad must be bool type')
+        self._diydata = diydata
+
+    @property
     def securities(self):
         return self._securities
 
@@ -116,8 +127,11 @@ class Strategy(object):
         init(self._context, **kwargs)
 
         #   装载策略回测数据
-        self._data = self._fetching_data_from_csv(self._context.minute)
-        #   初始化账户基本信息
+        if self._context.diydata:
+            self._data = kwargs['DiyData']
+        else:
+            self._data = self._fetching_data_from_csv(self._context.minute)
+        # 初始化账户基本信息
         self._account = Account(self._data, self._context)
 
     # 从本地读取订阅标的数据（csv文件）
@@ -140,7 +154,7 @@ class Strategy(object):
     #   执行回测
     def run_backtest(self, algo, **kwargs):
 
-        # 记录策略耗时
+        # #记录策略耗时
         # import time
         # t0 = time.time()
 
@@ -169,9 +183,9 @@ class Strategy(object):
                 if self._account._latest_hold_value(t) < 0:
                     print('you are blasting warehouse', t)
                     break
-
-                    # t1 = time.time()
-                    # print('the strategy backtesing consuming %f seconds' % (t1 - t0))
+        #
+        # t1 = time.time()
+        # print('the strategy backtesing consuming %f seconds' % (t1 - t0))
 
     def get_trading_data(self):
         daily_bal = self._account.daily_bal()
