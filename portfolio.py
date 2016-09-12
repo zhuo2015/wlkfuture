@@ -28,7 +28,7 @@ class DailyBal(object):
     def _init_daily_bal(data, freq):
         _dd = dict()
         if freq is not None:
-            tdx = pd.unique([x.replace(hour=0, minute=0, second=0) for x in data.major_axis])
+                tdx = pd.unique([x.replace(hour=0, minute=0, second=0) for x in data.major_axis])
         else:
             tdx = data.major_axis
         for sec in data.items:

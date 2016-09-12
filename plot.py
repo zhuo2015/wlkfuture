@@ -176,9 +176,9 @@ def plot_signal(df):
     import numpy as np
     _signal_type = pd.unique(df.signal.dropna())
     if np.in1d(_signal_type, [0, 1, -1]).all():
-        df.close.plot(c='k', figsize=(15, 6))
-        plt.plot(df[df.signal == 1].index, df[df.signal == 1].close, '^', markersize=6, c='r', label='buy')
-        plt.plot(df[df.signal == -1].index, df[df.signal == -1].close, 'v', markersize=6, c='g', label='sell')
+        df.close.plot(c='k', figsize=(14, 6.5))
+        plt.plot(df[df.signal == 1].index, df[df.signal == 1].close, '^', markersize=7, c='r', label='buy')
+        plt.plot(df[df.signal == -1].index, df[df.signal == -1].close, 'v', markersize=7, c='g', label='sell')
         plt.legend(loc='best')
         plt.show()
     else:
@@ -342,35 +342,35 @@ def plot_trades(strategy):
         f.subplots_adjust(hspace=0.2)
 
 
-# 展示买卖信号
-def plot_signal(df):
-    '''
-    Parameters
-    ----------
-    df:signal series,include signal and close,pandas
-
-    '''
-    import pandas as pd
-    import numpy as np
-    _signal_type = pd.unique(df.signal.dropna())
-    if np.in1d(_signal_type, [0, 1, -1]).all():
-        df.close.plot(c='k', figsize=(15, 6))
-        plt.plot(df[df.signal == 1].index, df[df.signal == 1].close, '^', markersize=6, c='r', label='buy')
-        plt.plot(df[df.signal == -1].index, df[df.signal == -1].close, 'v', markersize=6, c='g', label='sell')
-        plt.legend(loc='best')
-        plt.show()
-    else:
-        df.close.plot(c='k', figsize=(12, 6.5))
-        plt.plot(df[df.signal == 'long open'].index, df[df.signal == 'long open'].close, '^', markersize=6, c='r',
-                 label='long open')
-        plt.plot(df[df.signal == 'short open'].index, df[df.signal == 'short open'].close, '^', markersize=6, c='b',
-                 label='short open')
-        plt.plot(df[df.signal == 'long close'].index, df[df.signal == 'long close'].close, 'v', markersize=6, c='g',
-                 label='long close')
-        plt.plot(df[df.signal == 'short close'].index, df[df.signal == 'short close'].close, 'v', markersize=6, c='y',
-                 label='short close')
-        plt.legend(loc='best')
-        plt.show()
+# # 展示买卖信号
+# def plot_signal(df):
+#     '''
+#     Parameters
+#     ----------
+#     df:signal series,include signal and close,pandas
+#
+#     '''
+#     import pandas as pd
+#     import numpy as np
+#     _signal_type = pd.unique(df.signal.dropna())
+#     if np.in1d(_signal_type, [0, 1, -1]).all():
+#         df.close.plot(c='k', figsize=(15, 6))
+#         plt.plot(df[df.signal == 1].index, df[df.signal == 1].close, '^', markersize=6, c='r', label='buy')
+#         plt.plot(df[df.signal == -1].index, df[df.signal == -1].close, 'v', markersize=6, c='g', label='sell')
+#         plt.legend(loc='best')
+#         plt.show()
+#     else:
+#         df.close.plot(c='k', figsize=(12, 6.5))
+#         plt.plot(df[df.signal == 'long open'].index, df[df.signal == 'long open'].close, '^', markersize=6, c='r',
+#                  label='long open')
+#         plt.plot(df[df.signal == 'short open'].index, df[df.signal == 'short open'].close, '^', markersize=6, c='b',
+#                  label='short open')
+#         plt.plot(df[df.signal == 'long close'].index, df[df.signal == 'long close'].close, 'v', markersize=6, c='g',
+#                  label='long close')
+#         plt.plot(df[df.signal == 'short close'].index, df[df.signal == 'short close'].close, 'v', markersize=6, c='y',
+#                  label='short close')
+#         plt.legend(loc='best')
+#         plt.show()
 
 
 # 展示买卖信号

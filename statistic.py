@@ -164,7 +164,7 @@ def annual_return_max_drawdown(pl):
 #
 
 
-def stats(pt, pl, capital):
+def stats(pt, pl, capital, tpl):
     """
     Compute trading stats
     Parameters
@@ -175,7 +175,7 @@ def stats(pt, pl, capital):
         equity curv ,including time index
     capital: int
             initial cash
-
+    tpl: per trade profit loss
     Returns
     -------
     stats : Series of stats
@@ -213,26 +213,10 @@ def stats(pt, pl, capital):
     dd = rolling_max_dd(pl, TRADING_DAYS_PER_WEEK)
     stats['平均周回撤'] = np.average(dd)
     stats['最大周回撤'] = max(dd)
+    stats['交易笔数'] = len(tpl)
+    stats['盈亏比'] = tpl.returns[tpl.returns > 0].mean() / abs(tpl.returns[tpl.returns < 0].mean())
+    stats['胜率'] = len(tpl.returns[tpl.returns > 0]) / len(tpl)
     # RATIOS
     stats['夏普率'] = sharpe_ratio(pl)
     stats['索提诺比率'] = sortino_ratio(pl)
-    # # PERCENT CHANGE
-    # pc = _pct_change(pl, TRADING_DAYS_PER_YEAR)
-    # stats['pct_profitable_years'] = (pc > 0).sum() / len(pc)
-    # stats['best_year'] = pc.max()
-    # stats['worst_year'] = pc.min()
-    # stats['avg_year'] = np.average(pc)
-    # stats['annual_std'] = pc.std()
-    # pc = _pct_change(pl, TRADING_DAYS_PER_MONTH)
-    # stats['pct_profitable_months'] = (pc > 0).sum() / len(pc)
-    # stats['best_month'] = pc.max()
-    # stats['worst_month'] = pc.min()
-    # stats['avg_month'] = np.average(pc)
-    # stats['monthly_std'] = pc.std()
-    # pc = _pct_change(pl, TRADING_DAYS_PER_WEEK)
-    # stats['pct_profitable_weeks'] = (pc > 0).sum() / len(pc)
-    # stats['best_week'] = pc.max()
-    # stats['worst_week'] = pc.min()
-    # stats['avg_week'] = np.average(pc)
-    # stats['weekly_std'] = pc.std()
     return stats

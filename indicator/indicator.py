@@ -5,9 +5,83 @@ import numpy as np
 import talib.abstract as taab
 
 
-#   smart money
-def smart_money_indicator(data):
-    pass
+def _actual_signal(data):
+    da = data.copy()
+    da['signal'] = 0
+    hold = False
+    state = None
+    idx = da[(da.long_signal != 0) | (da.short_signal != 0)].index
+    for now in idx:
+        l_s = da.at[now, 'long_signal']
+        s_s = da.at[now, 'short_signal']
+        if not hold:
+            if l_s == 1:
+                da.at[now, 'signal'] = 1  # 多开
+                hold = True
+                state = 'long'
+            elif s_s == 1:
+                da.at[now, 'signal'] = 2  # 空开
+                hold = True
+                state = 'short'
+        elif hold:
+            if state == 'short' and s_s == -1:
+                da.at[now, 'signal'] = -2  # 空平
+                state = None
+                hold = False
+            elif state == 'long' and l_s == -1:
+                da.at[now, 'signal'] = -1  # 多平
+                state = None
+                hold = False
+    da.ix[da.signal == 2, 'signal'] = -1
+    da.ix[da.signal == -2, 'signal'] = 1
+    return da['signal']
+
+
+#   noly for 1、5 minute high frequency data
+def TURTLE(data, inperiod=550, outperiod=250):
+    da = data.copy()
+    da['next_open'] = da['open'].shift(-1)
+    da['long_break'] = pd.rolling_max(da.high, inperiod).shift(1)
+    da['long_exit'] = pd.rolling_min(da.low, outperiod).shift(1)
+    da['short_break'] = pd.rolling_min(da.low, inperiod).shift(1)
+    da['short_exit'] = pd.rolling_max(da.high, outperiod).shift(1)
+    long_in = (da.close.shift(1) < da.long_break.shift(1)) & (da.close > da.long_break)
+    long_exit = (da.close.shift(1) > da.long_exit.shift(1)) & (da.close < da.long_exit)
+    short_in = (da.close.shift(1) > da.short_break.shift(1)) & (da.close < da.short_break)
+    short_exit = (da.close.shift(1) < da.short_exit.shift(1)) & (da.close > da.short_exit)
+    da['long_signal'] = np.where(long_in, 1, np.where(long_exit, -1, 0))
+    da['short_signal'] = np.where(short_in, 1, np.where(short_exit, -1, 0))
+    da['signal'] = _actual_signal(da)
+    return da[['close', 'signal']]
+
+
+#   Daul Thrust
+def DualThrust(data, timepriod=5, ratio=0.9):
+    df = pd.DataFrame()
+    df['open'] = data['open']
+    df['hh'] = pd.rolling_max(data.high, timepriod)
+    df['lc'] = pd.rolling_min(data.close, timepriod)
+    df['hc'] = pd.rolling_max(data.close, timepriod)
+    df['ll'] = pd.rolling_min(data.low, timepriod)
+    df['hh_lc'] = df.hh - df.lc
+    df['lc_ll'] = df.lc - df.ll
+    df['range'] = df[['hh_lc', 'lc_ll']].max(1).shift(1)
+    df['up'] = df['open'] + ratio * df['range']
+    df['down'] = df['open'] - ratio * df['range']
+    return df[['up', 'down']]
+
+
+def RBreaker(data):
+    df = pd.DataFrame()
+    df['ssetup'] = data.high.shift(1) + (data.close.shift(1) - data.low.shift(1)) * 0.35  # 观察卖出
+    df['bsetup'] = data.low.shift(1) - (data.high.shift(1) - data.close.shift(1)) * 0.35  # 观察买入
+
+    df['senter'] = (1.07 / 2) * (data.high.shift(1) + data.low.shift(1)) - 0.07 * data.low.shift(1)  # 反转卖出
+    df['benter'] = (1.07 / 2) * (data.high.shift(1) + data.low.shift(1)) - 0.07 * data.high.shift(1)  # 反转买入
+
+    df['bbreak'] = df.ssetup + 0.25 * (df.ssetup - df.bsetup)
+    df['sbreak'] = df.bsetup - 0.25 * (df.ssetup - df.bsetup)
+    return df
 
 
 def SHADOW(data, upperbound=2, lowerbound=0.01):
@@ -37,49 +111,79 @@ def VOLDIFF(data, timeperiod=30):
     return df  # [['close', 'signal']]
 
 
-# MACD
+def HT_TRENDLINE(data, timeperiod=14, threshold=15):
+    df = pd.DataFrame()
+    df['close'] = data['close']
+    df['trend'] = taab.HT_TRENDLINE(data)
+    df['angle'] = taab.LINEARREG_ANGLE(data, timeperiod=timeperiod)
+    buy = (df.close.shift(1) < df.trend.shift(1)) & (df.close > df.trend) & (df.angle > threshold)
+    sell = (df.close.shift(1) > df.trend.shift(1)) & (df.close < df.trend) & (df.angle < -threshold)
+    df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
+    df.signal = df.signal.shift(1)
+    return df[['close', 'signal']]
+
+
+def HT_TRENDLINE2(data, fastperiod=3, slowperiod=15):
+    df = pd.DataFrame()
+    df['close'] = data['close']
+    df['trend'] = taab.HT_TRENDLINE(data)
+    df['ad'] = taab.ADOSC(data, fastperiod=fastperiod, slowperiod=slowperiod)
+    buy = (df.close.shift(1) < df.trend.shift(1)) & (df.close > df.trend) & (df.ad > 0)
+    sell = (df.close.shift(1) > df.trend.shift(1)) & (df.close < df.trend) & (df.ad < 0)
+    df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
+    df.signal = df.signal.shift(1)
+    return df[['close', 'signal']]
+
+
+#   MACD
 def MACD(data, fastperiod=12, slowperiod=26, signalperiod=9):
     df = data.join(taab.MACD(data, fastperiod, slowperiod, signalperiod))
-    buy = (df.macd.shift(1) < df.macdsignal.shift(1)) & (df.macd > df.macdsignal) & (df.macd > 0) & (df.macdsignal > 0)
-    sell = (df.macd.shift(1) > df.macdsignal.shift(1)) & (df.macd < df.macdsignal) & (df.macd < 0) & (df.macdsignal < 0)
+    buy = (df.macd.shift(1) < df.macdsignal.shift(1)) & (df.macd > df.macdsignal) & (df.macd > 0)
+    sell = (df.macd.shift(1) > df.macdsignal.shift(1)) & (df.macd < df.macdsignal) & (df.macd < 0)
+    df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
+    df.signal = df.signal.shift(1)
+    return df[['close', 'signal']]
+
+
+#   MACD
+def MACD2(data, fastperiod=12, slowperiod=26, signalperiod=9):
+    df = data.join(taab.MACD(data, fastperiod, slowperiod, signalperiod))
+    buy = (df.macd.shift(1) < df.macdsignal.shift(1)) & (df.macd > df.macdsignal)  # & (df.macd > 0)
+    sell = (df.macd.shift(1) > df.macdsignal.shift(1)) & (df.macd < df.macdsignal)  # & (df.macd < 0)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
 
 
 #   SAR
-def SAR(data, acceleration=0.02, maximum=0.2):
+def SAR(data, timeperiod=30, threshold=20):
     df = pd.DataFrame()
     df['close'] = data['close']
-    df['SAR'] = taab.SAR(data, acceleration, maximum)
-    buy = (df.SAR.shift(1) > df.close.shift(1)) & (df.SAR < df.close)
-    sell = (df.SAR.shift(1) < df.close.shift(1)) & (df.SAR > df.close)
+    df['SAR'] = taab.SAR(data)
+    df['trend'] = taab.HT_TRENDLINE(data)
+    df['angle'] = taab.LINEARREG_ANGLE(data, timeperiod=timeperiod)
+    buy = (df.SAR.shift(1) > df.close.shift(1)) & (df.SAR < df.close) & (df.close > df.trend) & (df.angle > threshold)
+    sell = (df.SAR.shift(1) < df.close.shift(1)) & (df.SAR > df.close) & (df.close < df.trend) & (df.angle < -threshold)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
 
 
 #   MIKE
-def MIKE(data, timeperiod=21):
+def MIKE(data, timeperiod=21, ma=3):
     df = pd.DataFrame()
     df['close'] = data['close']
     high = data['high']
     low = data['low']
     typ = (high + low + df.close) / 3
-    hlc = (pd.rolling_mean(typ, timeperiod)).shift(1)
-    hv = pd.Series(ta.EMA(np.array(pd.rolling_max(high, timeperiod)), 3), index=data.index)
-    lv = pd.Series(ta.EMA(np.array(pd.rolling_min(low, timeperiod)), 3), index=data.index)
-    stor = pd.Series(ta.EMA(np.array(2 * hv - lv), 3), index=data.index)
-    midr = pd.Series(ta.EMA(np.array(hlc + hv - lv), 3), index=data.index)
-    wekr = pd.Series(ta.EMA(np.array(hlc * 2 - lv), 3), index=data.index)
-    weks = pd.Series(ta.EMA(np.array(hlc * 2 - hv), 3), index=data.index)
-    mids = pd.Series(ta.EMA(np.array(hlc - hv + lv), 3), index=data.index)
-    stos = pd.Series(ta.EMA(np.array(2 * lv - hv), 3), index=data.index)
-    df = pd.concat([df, stor, midr, wekr, weks, mids, stos], axis=1)
-    df.columns = ['close', 'stor', 'midr', 'wekr', 'weks', 'mids', 'stos']
+    hlc = (pd.rolling_mean(typ, timeperiod))
+    hv = pd.Series(ta.EMA(np.array(pd.rolling_max(high, timeperiod)), ma), index=data.index)
+    lv = pd.Series(ta.EMA(np.array(pd.rolling_min(low, timeperiod)), ma), index=data.index)
+    df['wekr'] = pd.Series(ta.EMA(np.array(hlc * 2 - lv), ma), index=data.index)
+    df['weks'] = pd.Series(ta.EMA(np.array(hlc * 2 - hv), ma), index=data.index)
     # 建仓逻辑
-    buy = (df.close.shift(1) < df.wekr.shift(1)) & (df.close > df.wekr)
     sell = (df.close.shift(1) > df.weks.shift(1)) & (df.close < df.weks)
+    buy = (df.close.shift(1) < df.wekr.shift(1)) & (df.close > df.wekr)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
@@ -104,6 +208,16 @@ def BOLL(data, timeperiod=25, nbdevup=2, nbdevdn=2, matype=0):
     df = data.join(taab.BBANDS(data, timeperiod, nbdevup, nbdevdn, matype))
     buy = (df.close.shift(1) < df.upperband.shift(1)) & (df.close > df.upperband)
     sell = (df.close.shift(1) > df.lowerband.shift(1)) & (df.close < df.lowerband)
+    df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
+    df.signal = df.signal.shift(1)
+    return df[['close', 'signal']]
+
+
+# BOLL
+def BOLL2(data, timeperiod=25, nbdevup=2, nbdevdn=2, matype=0):
+    df = data.join(taab.BBANDS(data, timeperiod, nbdevup, nbdevdn, matype))
+    sell = (df.close.shift(1) < df.upperband.shift(1)) & (df.close > df.upperband)
+    buy = (df.close.shift(1) > df.lowerband.shift(1)) & (df.close < df.lowerband)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
@@ -175,15 +289,15 @@ def MTM(data, timeperiod=6, ma=6):
 
 
 #   DMI
-def DMI(data, timeperiod=14, m=6):
+def DMI(data, timeperiod=14, ma=6):
     df = pd.DataFrame()
     df['close'] = data['close']
     df['PDI'] = taab.PLUS_DI(data, timeperiod=timeperiod)
     df['MDI'] = taab.MINUS_DI(data, timeperiod=timeperiod)
-    df['ADX'] = pd.rolling_mean(np.abs(df.PDI - df.MDI) / (df.PDI + df.MDI) * 100, m)
-    df['ADXR'] = (df.ADX + df.ADX.shift(m)) * 0.5
-    buy = (df.PDI.shift(1) < df.MDI.shift(1)) & (df.PDI > df.MDI)
-    sell = (df.PDI.shift(1) > df.MDI.shift(1)) & (df.PDI < df.MDI)
+    df['ADX'] = pd.rolling_mean(np.abs(df.PDI - df.MDI) / (df.PDI + df.MDI) * 100, ma)
+    df['ADXR'] = (df.ADX + df.ADX.shift(ma)) * 0.5
+    buy = (df.PDI.shift(1) < df.MDI.shift(1)) & (df.PDI > df.MDI) & (df.ADX > 60)
+    sell = (df.PDI.shift(1) > df.MDI.shift(1)) & (df.PDI < df.MDI) & (df.ADX > 60)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
@@ -284,25 +398,26 @@ def OBV(data, short=5, long=25):
     df['SMAOBV'] = pd.rolling_mean(df.OBV, short)
     df['LMAOBV'] = pd.rolling_mean(df.OBV, long)
     # 建仓逻辑
-    buy = (df.SMAOBV.shift(1) < df.LMAOBV.shift(1)) & (df.SMAOBV > df.LMAOBV)  # & (df.OBV > 0)
-    sell = (df.SMAOBV.shift(1) > df.LMAOBV.shift(1)) & (df.SMAOBV < df.LMAOBV)  # & (df.OBV < 0)
+    buy = (df.SMAOBV.shift(1) < df.LMAOBV.shift(1)) & (df.SMAOBV > df.LMAOBV) & (df.OBV > 0)
+    sell = (df.SMAOBV.shift(1) > df.LMAOBV.shift(1)) & (df.SMAOBV < df.LMAOBV) & (df.OBV < 0)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
 
 
 #   EMV
-def EMV(data, windows=14, m=9):
+def EMV(data, timeperiod=14, ma=9):
     df = pd.DataFrame()
     df['close'] = data['close']
     df['volume'] = data['volume']
     df['high'] = data['high']
     df['low'] = data['low']
-    vol = pd.rolling_mean(df.volume, windows) / df.volume
+    vol = pd.rolling_mean(df.volume, timeperiod) / df.volume
     typ = df.high + df.low
     mid = 100 * typ.diff() / typ
-    df['EMV'] = pd.rolling_mean(mid * vol * (df.high - df.low) / pd.rolling_mean(df.high - df.low, windows), windows)
-    df['MAEMV'] = pd.rolling_mean(df.EMV, m)
+    df['EMV'] = pd.rolling_mean(mid * vol * (df.high - df.low) / pd.rolling_mean(df.high - df.low, timeperiod),
+                                timeperiod)
+    df['MAEMV'] = pd.rolling_mean(df.EMV, ma)
     # 建仓逻辑
     buy = (df.EMV.shift(1) < df.MAEMV.shift(1)) & (df.EMV > df.MAEMV) & (df.EMV > 0) & (df.MAEMV > 0)
     sell = (df.EMV.shift(1) > df.MAEMV.shift(1)) & (df.EMV < df.MAEMV) & (df.MAEMV < 0) & (df.EMV < 0)
@@ -311,12 +426,33 @@ def EMV(data, windows=14, m=9):
     return df[['close', 'signal']]
 
 
-#   EXPMA 指数平均数
-def EXPMA(data, fast=15, slow=35):
+#   EMV
+def EMV2(data, timeperiod=14, ma=9):
     df = pd.DataFrame()
     df['close'] = data['close']
-    df['EMA_SHORT'] = taab.EMA(data, fast)
-    df['EMA_LONG'] = taab.EMA(data, slow)
+    df['volume'] = data['volume']
+    df['high'] = data['high']
+    df['low'] = data['low']
+    vol = pd.rolling_mean(df.volume, timeperiod) / df.volume
+    typ = df.high + df.low
+    mid = 100 * typ.diff() / typ
+    df['EMV'] = pd.rolling_mean(mid * vol * (df.high - df.low) / pd.rolling_mean(df.high - df.low, timeperiod),
+                                timeperiod)
+    df['MAEMV'] = pd.rolling_mean(df.EMV, ma)
+    # 建仓逻辑
+    buy = (df.EMV.shift(1) < 0) & (df.EMV > 0) & (df.EMV > df.MAEMV)
+    sell = (df.EMV.shift(1) > 0) & (df.EMV < 0) & (df.EMV < df.MAEMV)
+    df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
+    df.signal = df.signal.shift(1)
+    return df[['close', 'signal']]
+
+
+#   EXPMA 指数平均数
+def EXPMA(data, fastperiod=15, slowperiod=35):
+    df = pd.DataFrame()
+    df['close'] = data['close']
+    df['EMA_SHORT'] = taab.EMA(data, fastperiod)
+    df['EMA_LONG'] = taab.EMA(data, slowperiod)
     # 建仓逻辑
     buy = (df.close.shift(1) < df.EMA_SHORT.shift(1)) & (df.close > df.EMA_SHORT) & (df.EMA_SHORT > df.EMA_LONG)
     sell = (df.close.shift(1) > df.EMA_SHORT.shift(1)) & (df.close < df.EMA_SHORT) & (df.EMA_SHORT < df.EMA_LONG)
@@ -383,7 +519,7 @@ def BRAR(data, timeperiod=22):
 def TRIX(data, timeperiod=12, signalperiod=7):
     df = pd.DataFrame()
     df['close'] = data['close']
-    df['TRIX'] = ta.TRIX(np.array(df.close), timeperiod) * 100
+    df['TRIX'] = taab.TRIX(data, timeperiod=timeperiod)
     df['MATRIX'] = pd.rolling_mean(df.TRIX, signalperiod)
     # 建仓逻辑
     buy = (df.TRIX.shift(1) < df.MATRIX.shift(1)) & (df.TRIX > df.MATRIX)
@@ -445,26 +581,23 @@ def RSI(data, shortperiod=6, longperiod=24, oversold=30, overbought=70):
     df['RSI_LONG'] = ta.RSI(close, longperiod)
     # 建仓逻辑
     buy = (df.RSI_SHORT.shift(1) < df.RSI_LONG.shift(1)) & (
-        df.RSI_SHORT > df.RSI_LONG) & (df.RSI_SHORT.shift(1) < overbought)
+        df.RSI_SHORT > df.RSI_LONG) & (df.RSI_LONG.shift(1) > 50)
     sell = (df.RSI_SHORT.shift(1) > df.RSI_LONG.shift(1)) & (
-        df.RSI_SHORT < df.RSI_LONG) & (df.RSI_SHORT.shift(1) > oversold)
+        df.RSI_SHORT < df.RSI_LONG) & (df.RSI_LONG.shift(1) < 50)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
 
 
 # RSI 相对强弱指标 done
-def RSI2(data, shortperiod=20, longperiod=55, oversold=20, overbought=80):
+def RSI2(data, timeperiod=20):
     df = pd.DataFrame()
     df['close'] = data['close']
     close = np.array(df.close)
-    df['RSI_SHORT'] = ta.RSI(close, shortperiod)
-    df['RSI_LONG'] = ta.RSI(close, longperiod)
+    df['rsi'] = taab.RSI(df, timeperiod=timeperiod)
     # 建仓逻辑
-    buy = (df.RSI_SHORT.shift(1) < df.RSI_LONG.shift(1)) & (
-        df.RSI_SHORT > df.RSI_LONG) & (df.RSI_SHORT.shift(1) < overbought) & (df.RSI_SHORT > 55)
-    sell = (df.RSI_SHORT.shift(1) > df.RSI_LONG.shift(1)) & (
-        df.RSI_SHORT < df.RSI_LONG) & (df.RSI_SHORT.shift(1) > oversold) & (df.RSI_SHORT < 55)
+    buy = (df.rsi.shift(1) < 60) & (df.rsi > 60)
+    sell = (df.rsi.shift(1) > 40) & (df.rsi < 40)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
@@ -491,7 +624,7 @@ def BIAS(data, m1=6, m2=12, m3=24):
 
 
 # PSY 心理线指标
-def PSY(data, n=12, m=6, **kwargs):
+def PSY(data, n=12, m=6):
     df = pd.DataFrame()
     df['close'] = data['close']
     up = pd.Series(np.where(df.close.diff() > 0, 1, 0), index=data.index)
@@ -556,28 +689,36 @@ def CHANDLR(data, n=22, longPosition=3, shortPosition=3):
 
 
 #  AROON阿隆优化指标
-def AROON(data, periods=20):
+def AROON(data, timeperiod=20):
     df = pd.DataFrame()
-    df['close'] = data['close']
-    high = np.array(data['high'])
-    low = np.array(data['low'])
-    aroondown, aroonup = ta.AROON(high, low, periods)
-    df['AROON_DOWN'] = pd.Series(aroondown, index=data.index)
-    df['AROON_UP'] = pd.Series(aroonup, index=data.index)
-    df['AROON'] = df.AROON_UP - df.AROON_DOWN
+    df = data.join(taab.AROON(data, timeperiod=timeperiod))
+    df['aroon'] = df.aroonup - df.aroondown
     # 建仓逻辑
-    buy_one = (df.AROON_UP.shift(1) < 70) & (df.AROON_UP > 70) & df.AROON > 0
-    sell_one = (df.AROON_DOWN.shift(1) < 70) & (df.AROON_DOWN < 70) & df.AROON < 0
-    buy_two = (df.AROON_DOWN.shift(1) > 50) & (df.AROON_DOWN < 50) & df.AROON > 0
-    sell_two = (df.AROON_UP.shift(1) > 50) & (df.AROON_UP < 50) & df.AROON < 0
-    buy = buy_one | buy_two
-    sell = sell_one | sell_two
+    buy_1 = (df.aroonup.shift(1) < 70) & (df.aroonup > 70)
+    sell_1 = (df.aroondown.shift(1) < 70) & (df.aroondown > 70)
+    buy_2 = (df.aroon.shift(1) < 0) & (df.aroon > 0)
+    sell_2 = (df.aroon.shift(1) > 0) & (df.aroon < 0)
+    buy = buy_1 | buy_2
+    sell = sell_1 | sell_2
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
 
 
-#  chaikinAD 离散指标(A/D)
+#  AROON阿隆优化指标
+def AROON2(data, timeperiod=20):
+    df = pd.DataFrame()
+    df = data.join(taab.AROON(data, timeperiod=timeperiod))
+    df['aroon'] = df.aroonup - df.aroondown
+    # 建仓逻辑
+    buy = (df.aroon.shift(1) < 0) & (df.aroon > 0)
+    sell = (df.aroon.shift(1) > 0) & (df.aroon < 0)
+    df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
+    df.signal = df.signal.shift(1)
+    return df[['close', 'signal']]
+
+
+# chaikinAD 离散指标(A/D)
 def CHAIKIN(data, fastperiod=9, slowperiod=13):
     df = pd.DataFrame()
     df['close'] = data['close']
@@ -594,15 +735,14 @@ def CHAIKIN(data, fastperiod=9, slowperiod=13):
     return df[['close', 'signal']]
 
 
-# 钱德动量摆动
-def CMO(data, timeperiod=14):
+# 钱德动量摆动,不扩大倍数
+def CMO(data, timeperiod=14, threshold=50):
     df = pd.DataFrame()
-    close = np.array(data['close'])
-    df['close'] = close
-    df['CMO'] = pd.Series(ta.CMO(close, timeperiod), index=data.index)
+    df['close'] = data.close
+    df['CMO'] = taab.CMO(data, timeperiod=timeperiod)
     # 建仓逻辑
-    buy = (df.CMO.shift(1) < 50) & (df.CMO > 50)
-    sell = (df.CMO.shift(1) > -50) & (df.CMO < -50)
+    buy = (df.CMO.shift(1) < threshold) & (df.CMO > threshold)
+    sell = (df.CMO.shift(1) > -threshold) & (df.CMO < -threshold)
     df['signal'] = np.where(buy, 1, np.where(sell, -1, np.nan))
     df.signal = df.signal.shift(1)
     return df[['close', 'signal']]
