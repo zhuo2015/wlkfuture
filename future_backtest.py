@@ -183,9 +183,9 @@ class Strategy(object):
                 if self._account._latest_hold_value(t) < 0:
                     print('you are blasting warehouse', t)
                     break
-        #
-        # t1 = time.time()
-        # print('the strategy backtesing consuming %f seconds' % (t1 - t0))
+                    #
+                    # t1 = time.time()
+                    # print('the strategy backtesing consuming %f seconds' % (t1 - t0))
 
     def get_trading_data(self):
         daily_bal = self._account.daily_bal()
@@ -205,7 +205,8 @@ class Strategy(object):
         equity_curve = self._account.account_result()
         daily_bal = self._account.daily_bal()
         pl = equity_curve['portfolio']
-        _df = pd.DataFrame(stats(daily_bal, pl, self._context.cash))
+        tpl = self._account.per_trade_pl()
+        _df = pd.DataFrame(stats(daily_bal, pl, self._context.cash, tpl))
         return _df.rename(columns={0: 'value'})
 
     def trade_signal(self):
