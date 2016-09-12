@@ -2,24 +2,6 @@ import TSLPy3 as ty
 from .variables import *
 
 
-# get future minute data from tinysoft
-def future_minute_from_tinysoft(code, beg=None, end=None, freq=5):
-    import pandas as pd
-    begt, endt = _tydate(beg, end)
-    if freq in [1, 5, 15, 30, 60]:
-        cy = '%d分钟线' % freq
-    else:
-        raise ValueError('freq must be 1,5,15,30,60')
-    res = ty.RemoteCallFunc("getDetail", [code, begt, endt, cy], {})[1]
-    df = pd.DataFrame(res)
-    df = df.rename(columns=FU_NAME_1)
-    df = df.reindex(columns=MINUTE_COL_2)
-    df.date = df.date.apply(lambda x: x.decode('utf-8'))
-    df.set_index('date', inplace=True)
-    df.index = pd.DatetimeIndex(df.index)
-    return df
-
-
 def _tydate(beg=None, end=None):
     from dateutil import parser
     beg = parser.parse(beg)
@@ -56,6 +38,24 @@ def stock_from_tinysoft(code, beg=None, end=None, freq='日线'):
     return df
 
 
+# get future minute data from tinysoft
+def future_minute_from_tinysoft(code, beg=None, end=None, freq=5):
+    import pandas as pd
+    begt, endt = _tydate(beg, end)
+    if freq in [1, 5, 15, 30, 60]:
+        cy = '%d分钟线' % freq
+    else:
+        raise ValueError('freq must be 1,5,15,30,60')
+    res = ty.RemoteCallFunc("getDetail", [code, begt, endt, cy], {})[1]
+    df = pd.DataFrame(res)
+    df.columns = df.columns.map(lambda x: x.decode('utf-8'))
+    df = df.reindex(columns=MINUTE_COL_2)
+    df.date = df.date.apply(lambda x: x.decode('utf-8'))
+    df.set_index('date', inplace=True)
+    df.index = pd.DatetimeIndex(df.index)
+    return df
+
+
 # get future daily data from tinysoft
 def future_daily_from_tinysoft(code):
     import pandas as pd
@@ -66,7 +66,7 @@ def future_daily_from_tinysoft(code):
     endt = ty.EncodeDate(year, mon, day)
     res = ty.RemoteCallFunc("dailyData", [code, begt, endt], {})[1]
     df = pd.DataFrame(res)
-    df = df.rename(columns=FU_NAME_1)
+    df.columns = df.columns.map(lambda x: x.decode('utf-8'))
     df = df.reindex(columns=DAILY_COL)
     df.date = df.date.apply(lambda x: x.decode('utf-8'))
     df.set_index('date', inplace=True)
